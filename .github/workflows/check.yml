@@ -36,6 +36,10 @@ jobs:
         run: |
           javac -encoding UTF-8 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d android/build/test android/src/com/smshub/app/SmsDiagnostics.java android/test/SmsDiagnosticsTest.java
           java -cp "android/build/test:$ANDROID_HOME/platforms/android-35/android.jar" com.smshub.app.SmsDiagnosticsTest
+      - name: Check inbox consent and identity
+        run: |
+          javac -encoding UTF-8 -d android/build/test android/src/com/smshub/app/InboxPolicy.java android/test/InboxPolicyTest.java
+          java -cp android/build/test com.smshub.app.InboxPolicyTest
       - name: Build APK
         run: |
           export ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"

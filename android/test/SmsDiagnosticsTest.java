@@ -19,7 +19,7 @@ public class SmsDiagnosticsTest {
         SharedPreferences prefs = (SharedPreferences) Proxy.newProxyInstance(
             SharedPreferences.class.getClassLoader(), new Class<?>[]{SharedPreferences.class}, (proxy, method, arguments) -> {
                 if (method.getName().equals("edit")) return editor;
-                if (method.getName().equals("getLong") || method.getName().equals("getString"))
+                if (method.getName().equals("getLong") || method.getName().equals("getString") || method.getName().equals("getBoolean"))
                     return values.getOrDefault((String) arguments[0], arguments[1]);
                 throw new UnsupportedOperationException(method.getName());
             });

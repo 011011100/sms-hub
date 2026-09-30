@@ -10,6 +10,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -34,6 +35,8 @@ public final class MainActivity extends Activity {
     private LinearLayout content;
     private TextView status;
     private TextView diagnostics;
+    private AlertDialog historyDialog;
+    private boolean renderedEnabled;
     private EditText url, code, phone0, phone1;
     private boolean processing;
     private final Runnable ticker = new Runnable() {
@@ -44,7 +47,11 @@ public final class MainActivity extends Activity {
         super.onCreate(state); config = new Config(this); render();
         if (config.enabled()) { SyncEngine.schedule(this); new Thread(() -> SyncEngine.sync(getApplicationContext())).start(); }
     }
-    @Override protected void onResume() { super.onResume(); handler.post(ticker); }
+    @Override protected void onResume() {
+        super.onResume();
+        if (config.paired() && renderedEnabled != config.enabled()) render();
+        SmsMonitorService.start(this); handler.post(ticker);
+    }
     @Override protected void onPause() { super.onPause(); handler.removeCallbacks(ticker); }
     private void render() {
         status = null;
@@ -122,6 +129,7 @@ public final class MainActivity extends Activity {
         return value;
     }
     private void renderPaired() {
+        renderedEnabled = config.enabled();
         section(config.name());
         text(config.url(), 14, false, Color.rgb(93, 115, 150));
         status = text("正在检查…", 15, false, Color.rgb(43, 91, 143));
@@ -134,16 +142,38 @@ public final class MainActivity extends Activity {
         button("立即同步并检查连接", false, view -> syncNow());
         button(config.enabled() ? "暂停同步" : "恢复同步", false, view -> {
             boolean next = !config.enabled();
-            config.prefs.edit().putBoolean("enabled", next).commit();
-            if (next) { SyncEngine.schedule(this); syncNow(); }
+            config.setEnabled(next);
+            if (next) { SyncEngine.schedule(this); SmsMonitorService.start(this); syncNow(); }
             else { SyncEngine.cancel(this); new Thread(() -> SyncEngine.sendState(getApplicationContext())).start(); }
             render();
         });
+        section("后台收码");
+        text("同步开启后会运行常驻通知服务，不需要一直打开本页面。可从通知或本页面暂停。系统的自启动和后台运行设置仍需允许。", 13, false, Color.rgb(102, 120, 147));
+        if (Build.VERSION.SDK_INT >= 33) button("允许后台收码通知", false, view -> {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) { toast("通知权限已允许"); SmsMonitorService.start(this); }
+            else requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4);
+        });
+        button(config.inboxEnabled() && config.inboxPermission() ? "关闭兼容收码" : "开启兼容收码（收件箱补查）", false, view -> {
+            if (config.inboxEnabled() && config.inboxPermission()) {
+                config.prefs.edit().putBoolean("inboxEnabled", false).putString("inboxError", "").commit();
+                SmsMonitorService.start(this); render(); return;
+            }
+            new AlertDialog.Builder(this).setTitle("开启兼容收码？")
+                .setMessage("需要额外允许读取短信。开启后会从系统收件箱检查新收到的短信，在本机筛选验证码并上传到你配对的服务器。不会补传开启前的历史短信，也不会修改或删除手机短信。暂停期间的新短信不补传。后台会显示收码通知。")
+                .setPositiveButton("同意并开启", (dialog, which) -> {
+                    if (config.inboxPermission()) enableInbox();
+                    else requestPermissions(new String[]{Manifest.permission.READ_SMS}, 3);
+                }).setNegativeButton("取消", null).show();
+        });
+        text("系统短信通知不稳定时可启用兼容收码；它会监听收件箱变化，并在服务运行时每 30 秒补查一次。如果系统拒绝读取，也会在诊断中显示。", 13, false, Color.rgb(102, 120, 147));
         section("短信接收诊断 · " + config.appVersion());
         diagnostics = text("正在检查…", 14, false, Color.rgb(43, 91, 143));
         text("连接成功只表示服务器可访问。请保持本应用打开，先接收一条普通短信，再接收一条含「验证码」的新短信，观察下面的记录。", 13, false, Color.rgb(102, 120, 147));
-        button("查看接收记录", false, view -> new AlertDialog.Builder(this).setTitle("最近接收记录")
-            .setMessage(new SmsDiagnostics(config.prefs).history()).setPositiveButton("关闭", null).show());
+        button("查看接收记录", false, view -> {
+            historyDialog = new AlertDialog.Builder(this).setTitle("最近接收记录")
+                .setMessage(new SmsDiagnostics(config.prefs).history()).setPositiveButton("关闭", null).create();
+            historyDialog.setOnDismissListener(dialog -> historyDialog = null); historyDialog.show();
+        });
         text("诊断记录仅在本机保存最近 16 步的时间和处理状态，不包含短信内容、号码或验证码。升级前的接收过程无法补记。", 12, false, Color.rgb(102, 120, 147));
         section("本机手机号"); numberInputs();
         text("换卡或调整卡槽后，请重新核对并保存。无法确定来源卡时，网页会显示「来源卡待确认」。", 13, false, Color.rgb(102, 120, 147));
@@ -163,7 +193,7 @@ public final class MainActivity extends Activity {
         button("解除本机配对", false, view -> new AlertDialog.Builder(this).setTitle("解除配对？")
             .setMessage("会删除本机连接凭据和待上传短信。网页中的已有记录保留，请在网页设备管理中停用本设备。")
             .setPositiveButton("解除", (dialog, which) -> {
-                config.prefs.edit().putBoolean("enabled", false).commit(); SyncEngine.cancel(this);
+                config.setEnabled(false); SyncEngine.cancel(this);
                 new Thread(() -> {
                     SyncEngine.sendState(getApplicationContext());
                     try (PendingMessages queue = new PendingMessages(getApplicationContext())) { queue.clear(); }
@@ -173,19 +203,33 @@ public final class MainActivity extends Activity {
         updateStatus();
     }
     private void requestSmsPermission() {
-        if (config.smsPermission()) { toast("短信权限已允许"); syncNow(); return; }
+        if (config.smsPermission()) { toast("短信权限已允许"); SmsMonitorService.start(this); syncNow(); return; }
         requestPermissions(new String[]{Manifest.permission.RECEIVE_SMS}, 1);
+    }
+    private void enableInbox() {
+        config.prefs.edit().putBoolean("inboxEnabled", true).putLong("inboxSince", System.currentTimeMillis())
+            .putString("inboxError", "").putInt("inboxRows", 0).putLong("inboxCheckedAt", 0).commit();
+        new SmsDiagnostics(config.prefs).record("已授权兼容收码，仅检查此后新收到的短信");
+        SmsMonitorService.start(this); render(); syncNow();
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(request, permissions, grants);
         if (request == 1 && (grants.length == 0 || grants[0] != PackageManager.PERMISSION_GRANTED))
             showError("短信权限尚未允许，暂时无法自动同步。可在系统应用设置中允许；若系统不提供该权限，需要针对机型检查兼容性。");
         if (request == 2) config.rememberSubscriptions();
+        if (request == 3) {
+            if (config.inboxPermission()) enableInbox();
+            else showError("读取短信未获允许，兼容收码尚未开启。原有短信接收方式保留。");
+        }
+        if (request == 4 && Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            toast("通知未允许，系统可能只在活动应用中显示后台服务。可在应用设置中开启通知。");
+        SmsMonitorService.start(this);
         syncNow(); updateStatus();
     }
     private void syncNow() {
         if (processing || !config.paired()) return;
         processing = true;
+        SmsMonitorService.start(this);
         SyncEngine.schedule(this);
         new Thread(() -> {
             if (config.enabled()) SyncEngine.sync(getApplicationContext()); else SyncEngine.sendState(getApplicationContext());
@@ -195,13 +239,17 @@ public final class MainActivity extends Activity {
     private void updateStatus() {
         if (status == null || !config.paired()) return;
         String value = (config.enabled() ? "同步已开启" : "同步已暂停") + "\n短信权限：" + (config.smsPermission() ? "已允许" : "未允许");
+        value += "\n后台收码：" + (SmsMonitorService.running ? "服务运行中" : "未运行");
+        value += "\n兼容收码：" + (config.inboxEnabled() ? (config.inboxPermission() ? "已开启" : "需要读取短信权限") : "未开启");
         try (PendingMessages queue = new PendingMessages(this)) { value += "\n等待上传：" + queue.count() + " 条"; }
         catch (Exception error) { value += "\n本机队列读取失败"; }
         long last = config.prefs.getLong("lastSync", 0);
         value += "\n最近连接：" + (last == 0 ? "尚未成功" : DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(new Date(last)));
         String error = config.prefs.getString("error", ""); if (!error.isEmpty()) value += "\n" + error;
+        String inboxError = config.prefs.getString("inboxError", ""); if (!inboxError.isEmpty()) value += "\n" + inboxError;
         status.setText(value);
         if (diagnostics != null) diagnostics.setText(new SmsDiagnostics(config.prefs).summary());
+        if (historyDialog != null && historyDialog.isShowing()) historyDialog.setMessage(new SmsDiagnostics(config.prefs).history());
     }
     private void toast(String value) { Toast.makeText(this, value, Toast.LENGTH_LONG).show(); }
     private void showError(String value) { new AlertDialog.Builder(this).setTitle("请检查").setMessage(value).setPositiveButton("知道了", null).show(); }

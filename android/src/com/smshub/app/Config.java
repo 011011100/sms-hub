@@ -17,6 +17,21 @@ final class Config {
     boolean paired() { return !prefs.getString("token", "").isEmpty(); }
     boolean enabled() { return paired() && prefs.getBoolean("enabled", false); }
     boolean smsPermission() { return context.checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED; }
+    boolean inboxEnabled() { return prefs.getBoolean("inboxEnabled", false); }
+    boolean inboxPermission() { return context.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
+    void setEnabled(boolean value) {
+        SharedPreferences.Editor editor = prefs.edit().putBoolean("enabled", value);
+        if (value && !enabled() && inboxEnabled()) editor.putLong("inboxSince", System.currentTimeMillis());
+        editor.commit();
+    }
+    int slotForSubscription(int subscription) {
+        if (subscription < 0 || context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return -1;
+        try {
+            SubscriptionInfo info = context.getSystemService(SubscriptionManager.class).getActiveSubscriptionInfo(subscription);
+            if (info != null && info.getSimSlotIndex() >= 0 && info.getSimSlotIndex() <= 1) return info.getSimSlotIndex();
+        } catch (Exception ignored) {}
+        return -1;
+    }
     String url() { return prefs.getString("url", ""); }
     String name() { return prefs.getString("name", ""); }
     String phone(int slot) { return slot < 0 ? "" : prefs.getString("phone" + slot, ""); }
@@ -54,6 +69,6 @@ final class Config {
         for (int slot = 0; slot < 2; slot++) if (!phone(slot).isEmpty()) lines.put(new JSONObject().put("slot", slot).put("number", phone(slot)));
         return new JSONObject().put("lines", lines).put("model", Build.MANUFACTURER + " " + Build.MODEL)
             .put("androidVersion", Build.VERSION.RELEASE).put("appVersion", appVersion())
-            .put("paused", !enabled()).put("smsPermission", smsPermission());
+            .put("paused", !enabled()).put("smsPermission", smsPermission() || (inboxEnabled() && inboxPermission()));
     }
 }

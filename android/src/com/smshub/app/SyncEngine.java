@@ -21,16 +21,23 @@ final class SyncEngine {
         if (scheduler.getPendingJob(HEARTBEAT) == null) scheduler.schedule(new JobInfo.Builder(HEARTBEAT, service)
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).setPeriodic(15 * 60000L).build());
     }
-    static void cancel(Context context) { JobScheduler scheduler = context.getSystemService(JobScheduler.class); scheduler.cancel(RETRY); scheduler.cancel(HEARTBEAT); }
-    static boolean sync(Context context) {
+    static void cancel(Context context) {
+        JobScheduler scheduler = context.getSystemService(JobScheduler.class); scheduler.cancel(RETRY); scheduler.cancel(HEARTBEAT);
+        SmsMonitorService.stop(context);
+    }
+    static boolean sync(Context context) { return sync(context, true); }
+    static boolean sync(Context context, boolean forceHeartbeat) {
         if (!RUNNING.compareAndSet(false, true)) return false;
         Config config = new Config(context);
         SmsDiagnostics diagnostics = new SmsDiagnostics(config.prefs);
         int attempted = 0;
         try (PendingMessages queue = new PendingMessages(context)) {
             if (!config.enabled()) return true;
+            InboxScanner.capture(context, queue);
+            if (!config.enabled()) return true;
             JSONArray messages = queue.batch();
             attempted = messages.length();
+            if (!forceHeartbeat && attempted == 0 && System.currentTimeMillis() - config.prefs.getLong("lastSync", 0) < 15 * 60000L) return true;
             JSONObject result = Network.post(config.url(), "/api/device/sync", config.token(), new JSONObject().put("messages", messages).put("details", config.details()));
             queue.acknowledge(result.getJSONArray("acknowledged"));
             diagnostics.uploaded(result.getJSONArray("acknowledged").length());
@@ -39,7 +46,7 @@ final class SyncEngine {
         } catch (Network.ApiException error) {
             if (attempted > 0) diagnostics.record("上传未成功：HTTP " + error.status);
             config.error(error.getMessage());
-            if (error.status == 401) { config.prefs.edit().putBoolean("enabled", false).commit(); cancel(context); return true; }
+            if (error.status == 401) { config.setEnabled(false); cancel(context); return true; }
             return false;
         } catch (Exception error) {
             diagnostics.failed("读取队列或连接服务器失败", error);

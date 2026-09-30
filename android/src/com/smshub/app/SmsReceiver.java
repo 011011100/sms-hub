@@ -35,6 +35,16 @@ public final class SmsReceiver extends BroadcastReceiver {
         SmsDiagnostics diagnostics = new SmsDiagnostics(config.prefs);
         diagnostics.broadcast();
         if (!config.enabled()) { diagnostics.record("同步已暂停，未采集短信"); return; }
+        if (config.inboxEnabled() && config.inboxPermission()) {
+            // In compatibility mode only provider rows create events, so observer and broadcast cannot duplicate a message.
+            diagnostics.record("兼容模式：等待短信写入系统收件箱后补查");
+            PendingResult pending = goAsync();
+            new Thread(() -> {
+                try { SyncEngine.sync(context); }
+                finally { pending.finish(); }
+            }, "sms-inbox-check").start();
+            return;
+        }
         if (!config.smsPermission()) { diagnostics.record("短信权限未允许，未采集短信"); return; }
         try {
             SmsMessage[] parts = Telephony.Sms.Intents.getMessagesFromIntent(intent);

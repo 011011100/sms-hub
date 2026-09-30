@@ -36,11 +36,13 @@ final class SmsDiagnostics {
     }
     void failed(String stage, Exception error) { record(stage + "（" + error.getClass().getSimpleName() + "）"); }
     String summary() {
-        return "系统短信通知：" + prefs.getLong("smsBroadcastCount", 0) + " 次（更新后开始统计）"
+        return "系统短信通知：" + prefs.getLong("smsBroadcastCount", 0) + " 次（0.1.1 起累计）"
             + "\n最近收到通知：" + time(prefs.getLong("smsBroadcastAt", 0))
             + "\n最近保存验证码：" + time(prefs.getLong("lastReceived", 0))
             + "\n最近确认上传：" + time(prefs.getLong("smsUploadedAt", 0))
-            + "\n处理状态：" + prefs.getString("smsStage", "等待系统发送新的短信通知");
+            + "\n处理状态：" + prefs.getString("smsStage", "等待系统发送新的短信通知")
+            + (prefs.getBoolean("inboxEnabled", false) ? "\n最近补查收件箱：" + time(prefs.getLong("inboxCheckedAt", 0))
+                + "\n已补查保存验证码：" + prefs.getLong("inboxCaptured", 0) + " 条" : "");
     }
     String history() { return prefs.getString("smsDiagnosticLog", "尚无记录。请保持本应用打开，再接收一条新的测试短信。"); }
     private static String time(long value) {
