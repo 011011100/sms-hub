@@ -1,0 +1,17 @@
+{
+  "name": "sms-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.14.0 <25" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "android:build": "bash android/build.sh"
+  },
+  "dependencies": { "vue": "3.5.43" },
+  "devDependencies": { "@vitejs/plugin-vue": "6.0.9", "vite": "8.3.1" }
+}

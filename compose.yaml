@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      DATA_DIR: /app/data
+    volumes:
+      - sms-data:/app/data
+    expose:
+      - "8787"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SMS_DOMAIN: ${SMS_DOMAIN:?请在 .env 设置 SMS_DOMAIN，例如 sms.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+volumes:
+  sms-data:
+  caddy-data:
+  caddy-config:
