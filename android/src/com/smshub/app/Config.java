@@ -45,11 +45,15 @@ final class Config {
         rememberSubscriptions();
     }
     void error(String value) { prefs.edit().putString("error", value).apply(); }
+    String appVersion() {
+        try { return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName; }
+        catch (PackageManager.NameNotFoundException ignored) { return "未知版本"; }
+    }
     JSONObject details() throws Exception {
         JSONArray lines = new JSONArray();
         for (int slot = 0; slot < 2; slot++) if (!phone(slot).isEmpty()) lines.put(new JSONObject().put("slot", slot).put("number", phone(slot)));
         return new JSONObject().put("lines", lines).put("model", Build.MANUFACTURER + " " + Build.MODEL)
-            .put("androidVersion", Build.VERSION.RELEASE).put("appVersion", "0.1.0")
+            .put("androidVersion", Build.VERSION.RELEASE).put("appVersion", appVersion())
             .put("paused", !enabled()).put("smsPermission", smsPermission());
     }
 }

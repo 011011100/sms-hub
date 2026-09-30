@@ -6,6 +6,9 @@ public class OtpTest {
         if (!expected.equals(actual)) throw new AssertionError(body + " expected=" + expected + " actual=" + actual);
     }
     public static void main(String[] args) {
+        String sample = "测试验证码 123456";
+        if (!Otp.isVerification(sample)) throw new AssertionError("Test SMS was filtered out");
+        code(sample, "123456");
         code("【测试】您的验证码是 123456，5 分钟内有效。", "123456");
         code("Your verification code is 938104. Expires in 10 minutes.", "938104");
         code("482913 is your verification code.", "482913");

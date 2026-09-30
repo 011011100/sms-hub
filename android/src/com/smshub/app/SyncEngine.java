@@ -25,18 +25,26 @@ final class SyncEngine {
     static boolean sync(Context context) {
         if (!RUNNING.compareAndSet(false, true)) return false;
         Config config = new Config(context);
+        SmsDiagnostics diagnostics = new SmsDiagnostics(config.prefs);
+        int attempted = 0;
         try (PendingMessages queue = new PendingMessages(context)) {
             if (!config.enabled()) return true;
             JSONArray messages = queue.batch();
+            attempted = messages.length();
             JSONObject result = Network.post(config.url(), "/api/device/sync", config.token(), new JSONObject().put("messages", messages).put("details", config.details()));
             queue.acknowledge(result.getJSONArray("acknowledged"));
+            diagnostics.uploaded(result.getJSONArray("acknowledged").length());
             config.prefs.edit().putLong("lastSync", System.currentTimeMillis()).putString("error", "").apply();
             return queue.count() == 0;
         } catch (Network.ApiException error) {
+            if (attempted > 0) diagnostics.record("上传未成功：HTTP " + error.status);
             config.error(error.getMessage());
             if (error.status == 401) { config.prefs.edit().putBoolean("enabled", false).commit(); cancel(context); return true; }
             return false;
-        } catch (Exception error) { config.error("连接未成功，联网后会重试。请检查服务器地址、网络和手机时间。"); return false; }
+        } catch (Exception error) {
+            diagnostics.failed("读取队列或连接服务器失败", error);
+            config.error("连接未成功，联网后会重试。请检查服务器地址、网络和手机时间。"); return false;
+        }
         finally { RUNNING.set(false); }
     }
     static void sendState(Context context) {

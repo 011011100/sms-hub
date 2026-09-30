@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
     private Config config;
     private LinearLayout content;
     private TextView status;
+    private TextView diagnostics;
     private EditText url, code, phone0, phone1;
     private boolean processing;
     private final Runnable ticker = new Runnable() {
@@ -47,6 +48,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() { super.onPause(); handler.removeCallbacks(ticker); }
     private void render() {
         status = null;
+        diagnostics = null;
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(Color.rgb(244, 246, 250));
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(dp(25), dp(28), dp(25), dp(36));
         scroll.addView(content); setContentView(scroll);
@@ -137,6 +139,12 @@ public final class MainActivity extends Activity {
             else { SyncEngine.cancel(this); new Thread(() -> SyncEngine.sendState(getApplicationContext())).start(); }
             render();
         });
+        section("短信接收诊断 · " + config.appVersion());
+        diagnostics = text("正在检查…", 14, false, Color.rgb(43, 91, 143));
+        text("连接成功只表示服务器可访问。请保持本应用打开，先接收一条普通短信，再接收一条含「验证码」的新短信，观察下面的记录。", 13, false, Color.rgb(102, 120, 147));
+        button("查看接收记录", false, view -> new AlertDialog.Builder(this).setTitle("最近接收记录")
+            .setMessage(new SmsDiagnostics(config.prefs).history()).setPositiveButton("关闭", null).show());
+        text("诊断记录仅在本机保存最近 16 步的时间和处理状态，不包含短信内容、号码或验证码。升级前的接收过程无法补记。", 12, false, Color.rgb(102, 120, 147));
         section("本机手机号"); numberInputs();
         text("换卡或调整卡槽后，请重新核对并保存。无法确定来源卡时，网页会显示「来源卡待确认」。", 13, false, Color.rgb(102, 120, 147));
         button("保存号码", false, view -> {
@@ -190,9 +198,10 @@ public final class MainActivity extends Activity {
         try (PendingMessages queue = new PendingMessages(this)) { value += "\n等待上传：" + queue.count() + " 条"; }
         catch (Exception error) { value += "\n本机队列读取失败"; }
         long last = config.prefs.getLong("lastSync", 0);
-        value += "\n最近同步：" + (last == 0 ? "尚未成功" : DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(new Date(last)));
+        value += "\n最近连接：" + (last == 0 ? "尚未成功" : DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(new Date(last)));
         String error = config.prefs.getString("error", ""); if (!error.isEmpty()) value += "\n" + error;
         status.setText(value);
+        if (diagnostics != null) diagnostics.setText(new SmsDiagnostics(config.prefs).summary());
     }
     private void toast(String value) { Toast.makeText(this, value, Toast.LENGTH_LONG).show(); }
     private void showError(String value) { new AlertDialog.Builder(this).setTitle("请检查").setMessage(value).setPositiveButton("知道了", null).show(); }

@@ -5,7 +5,10 @@ cd "$(dirname "$0")"
 : "${ANDROID_JAR:?请设置 ANDROID_JAR，指向 Android 35 的 android.jar}"
 : "${ANDROID_BUILD_TOOLS:?请设置 ANDROID_BUILD_TOOLS，指向 Android build-tools 35.0.0}"
 export PATH="$JAVA_HOME/bin:$PATH"
+version=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml)
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Android versionName' >&2; exit 1; }
 build_dir="$PWD/build"
+apk="$build_dir/sms-hub-$version.apk"
 mkdir -p "$build_dir/classes" "$build_dir/generated" "$build_dir/dex"
 "$ANDROID_BUILD_TOOLS/aapt2" compile --dir res -o "$build_dir/resources.zip"
 "$ANDROID_BUILD_TOOLS/aapt2" link -I "$ANDROID_JAR" --manifest AndroidManifest.xml --java "$build_dir/generated" --min-sdk-version 26 --target-sdk-version 35 -o "$build_dir/base.apk" "$build_dir/resources.zip"
@@ -26,6 +29,6 @@ if [[ -z "${APK_KEYSTORE:-}" ]]; then
   fi
 fi
 : "${APK_KEYSTORE_PASSWORD:?请设置 APK_KEYSTORE_PASSWORD}"
-"$ANDROID_BUILD_TOOLS/apksigner" sign --ks "$APK_KEYSTORE" --ks-key-alias "${APK_KEY_ALIAS:-smshub}" --ks-pass env:APK_KEYSTORE_PASSWORD --key-pass env:APK_KEYSTORE_PASSWORD --out "$build_dir/sms-hub-0.1.0.apk" "$build_dir/aligned.apk"
-"$ANDROID_BUILD_TOOLS/apksigner" verify --verbose "$build_dir/sms-hub-0.1.0.apk"
-printf '\nAPK: %s\n' "$build_dir/sms-hub-0.1.0.apk"
+"$ANDROID_BUILD_TOOLS/apksigner" sign --ks "$APK_KEYSTORE" --ks-key-alias "${APK_KEY_ALIAS:-smshub}" --ks-pass env:APK_KEYSTORE_PASSWORD --key-pass env:APK_KEYSTORE_PASSWORD --out "$apk" "$build_dir/aligned.apk"
+"$ANDROID_BUILD_TOOLS/apksigner" verify --verbose "$apk"
+printf '\nAPK: %s\n' "$apk"

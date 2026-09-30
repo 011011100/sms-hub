@@ -32,6 +32,10 @@ jobs:
           mkdir -p android/build/test
           javac -encoding UTF-8 -d android/build/test android/src/com/smshub/app/Otp.java android/test/OtpTest.java
           java -cp android/build/test OtpTest
+      - name: Check SMS diagnostics
+        run: |
+          javac -encoding UTF-8 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d android/build/test android/src/com/smshub/app/SmsDiagnostics.java android/test/SmsDiagnosticsTest.java
+          java -cp "android/build/test:$ANDROID_HOME/platforms/android-35/android.jar" com.smshub.app.SmsDiagnosticsTest
       - name: Build APK
         run: |
           export ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"
@@ -40,4 +44,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sms-hub-apk-ci
-          path: android/build/sms-hub-0.1.0.apk
+          path: android/build/sms-hub-*.apk
