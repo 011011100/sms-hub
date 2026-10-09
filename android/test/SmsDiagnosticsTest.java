@@ -19,7 +19,7 @@ public class SmsDiagnosticsTest {
         SharedPreferences prefs = (SharedPreferences) Proxy.newProxyInstance(
             SharedPreferences.class.getClassLoader(), new Class<?>[]{SharedPreferences.class}, (proxy, method, arguments) -> {
                 if (method.getName().equals("edit")) return editor;
-                if (method.getName().equals("getLong") || method.getName().equals("getString") || method.getName().equals("getBoolean"))
+                if (method.getName().equals("getLong") || method.getName().equals("getString") || method.getName().equals("getBoolean") || method.getName().equals("getInt"))
                     return values.getOrDefault((String) arguments[0], arguments[1]);
                 throw new UnsupportedOperationException(method.getName());
             });
@@ -38,6 +38,22 @@ public class SmsDiagnosticsTest {
         diagnostics.saved(1);
         diagnostics.uploaded(1);
         check(prefs.getLong("lastReceived", 0) > 0 && prefs.getLong("smsUploadedAt", 0) > 0, "Capture and upload timestamps must be recorded separately");
+        prefs.edit().putBoolean("enabled", true).putBoolean("inboxEnabled", true).apply();
+        diagnostics.inboxStarted(System.currentTimeMillis() - 20000);
+        check(diagnostics.summary().contains("超过 15 秒"), "A stuck provider query must not look like an empty inbox");
+        diagnostics.inboxFailed("收件箱补查失败（SecurityException）");
+        check(diagnostics.summary().contains("SecurityException"), "Provider failures must be visible in diagnostic summary");
+        diagnostics.inboxStarted(System.currentTimeMillis());
+        check(diagnostics.summary().contains("补查状态：正在补查"), "A retry must be distinguished from a completed query");
+        diagnostics.inboxCompleted(0, 0, 0, System.currentTimeMillis());
+        check(diagnostics.summary().contains("系统未返回此时间范围内的短信"), "An empty query must report completion without claiming privacy rejection");
+        check(!diagnostics.summary().contains("SecurityException"), "A successful query must clear a previous provider error");
+        long uploaded = prefs.getLong("smsUploadedAt", 0);
+        diagnostics.inboxCompleted(4, 2, 1, System.currentTimeMillis());
+        check(diagnostics.summary().contains("4 条短信，其中识别验证码 2 条"), "Ordinary SMS, matching SMS and new saves must be distinguishable");
+        check(prefs.getLong("smsUploadedAt", 0) == uploaded, "Successful inbox checks cannot claim a server upload");
+        prefs.edit().putBoolean("enabled", false).apply();
+        check(diagnostics.summary().contains("已暂停，当前不会补查"), "Compatibility enabled with master paused must say why checks are stopped");
         for (int i = 0; i < 20; i++) diagnostics.record("步骤 " + i);
         check(diagnostics.history().split("\n").length == 16, "Diagnostic history must remain bounded");
         check(diagnostics.history().split("\n")[0].endsWith("步骤 19"), "Newest event must be first");

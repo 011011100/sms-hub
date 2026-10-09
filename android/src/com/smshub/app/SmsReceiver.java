@@ -37,7 +37,7 @@ public final class SmsReceiver extends BroadcastReceiver {
         if (!config.enabled()) { diagnostics.record("同步已暂停，未采集短信"); return; }
         if (config.inboxEnabled() && config.inboxPermission()) {
             // In compatibility mode only provider rows create events, so observer and broadcast cannot duplicate a message.
-            diagnostics.record("兼容模式：等待短信写入系统收件箱后补查");
+            diagnostics.record("收到新短信，等待写入系统收件箱后自动补查");
             PendingResult pending = goAsync();
             new Thread(() -> {
                 try { SyncEngine.sync(context); }

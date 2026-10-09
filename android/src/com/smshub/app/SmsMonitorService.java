@@ -47,6 +47,7 @@ public final class SmsMonitorService extends Service {
         Config config = new Config(this);
         if (intent != null && PAUSE.equals(intent.getAction())) {
             config.setEnabled(false); SyncEngine.cancel(this);
+            new SmsDiagnostics(config.prefs).record("已从通知暂停收码，暂停期间的新短信不补传");
             new Thread(() -> SyncEngine.sendState(getApplicationContext()), "sms-pause-state").start();
             stopSelf(); return START_NOT_STICKY;
         }
@@ -55,9 +56,9 @@ public final class SmsMonitorService extends Service {
         PendingIntent pause = PendingIntent.getService(this, 1, new Intent(this, SmsMonitorService.class).setAction(PAUSE), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("SMS Hub 正在后台收码")
-            .setContentText(config.inboxEnabled() ? "兼容模式：检查新收到的验证码短信" : "等待新验证码短信，点击管理")
+            .setContentText(config.inboxEnabled() ? "自动接收并补查新验证码，点击管理" : "接收新验证码，读取权限未允许时不补查")
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-            .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause, "暂停同步", pause).build()).build();
+            .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause, "暂停收码", pause).build()).build();
         try {
             if (Build.VERSION.SDK_INT >= 34) startForeground(20, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);
             else startForeground(20, notification);

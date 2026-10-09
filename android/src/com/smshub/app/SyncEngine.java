@@ -11,6 +11,12 @@ import org.json.JSONObject;
 final class SyncEngine {
     private static final int RETRY = 10, HEARTBEAT = 11;
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    private static volatile String phase = "准备检查";
+    private static volatile long startedAt;
+    static boolean isRunning() { return RUNNING.get(); }
+    static String status() {
+        return RUNNING.get() ? phase + "（" + Math.max(0, (System.currentTimeMillis() - startedAt) / 1000) + " 秒）" : "空闲";
+    }
     static void schedule(Context context) {
         Config config = new Config(context);
         if (!config.enabled()) return;
@@ -28,17 +34,20 @@ final class SyncEngine {
     static boolean sync(Context context) { return sync(context, true); }
     static boolean sync(Context context, boolean forceHeartbeat) {
         if (!RUNNING.compareAndSet(false, true)) return false;
+        startedAt = System.currentTimeMillis(); phase = "打开本机队列";
         Config config = new Config(context);
         SmsDiagnostics diagnostics = new SmsDiagnostics(config.prefs);
         int attempted = 0;
         try (PendingMessages queue = new PendingMessages(context)) {
             if (!config.enabled()) return true;
-            InboxScanner.capture(context, queue);
+            phase = "检查系统收件箱"; InboxScanner.capture(context, queue);
             if (!config.enabled()) return true;
-            JSONArray messages = queue.batch();
+            phase = "读取待传队列"; JSONArray messages = queue.batch();
             attempted = messages.length();
             if (!forceHeartbeat && attempted == 0 && System.currentTimeMillis() - config.prefs.getLong("lastSync", 0) < 15 * 60000L) return true;
+            phase = "连接服务器";
             JSONObject result = Network.post(config.url(), "/api/device/sync", config.token(), new JSONObject().put("messages", messages).put("details", config.details()));
+            phase = "保存服务器回执";
             queue.acknowledge(result.getJSONArray("acknowledged"));
             diagnostics.uploaded(result.getJSONArray("acknowledged").length());
             config.prefs.edit().putLong("lastSync", System.currentTimeMillis()).putString("error", "").apply();

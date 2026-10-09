@@ -19,6 +19,23 @@ final class Config {
     boolean smsPermission() { return context.checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED; }
     boolean inboxEnabled() { return prefs.getBoolean("inboxEnabled", false); }
     boolean inboxPermission() { return context.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
+    boolean collectionConsent() { return prefs.getBoolean("collectionConsent", false) || inboxEnabled(); }
+    boolean startCollection() {
+        if (!paired()) return false;
+        CollectionPlan plan = CollectionPlan.create(enabled(), inboxEnabled(), prefs.getLong("inboxSince", 0),
+            collectionConsent(), smsPermission(), inboxPermission(), System.currentTimeMillis());
+        if (!plan.canStart) return false;
+        SharedPreferences.Editor editor = prefs.edit().putBoolean("enabled", true).putBoolean("inboxEnabled", plan.readInbox)
+            .putString("inboxError", "");
+        if (plan.readInbox) {
+            if (plan.inboxSince != prefs.getLong("inboxSince", 0)) {
+                editor.putLong("inboxCheckedAt", 0).putLong("inboxAttemptAt", 0).putLong("inboxFinishedAt", 0)
+                    .putInt("inboxRows", 0).putInt("inboxMatched", 0);
+            }
+            editor.putLong("inboxSince", plan.inboxSince);
+        }
+        return editor.commit();
+    }
     void setEnabled(boolean value) {
         SharedPreferences.Editor editor = prefs.edit().putBoolean("enabled", value);
         if (value && !enabled() && inboxEnabled()) editor.putLong("inboxSince", System.currentTimeMillis());
@@ -55,7 +72,8 @@ final class Config {
     void paired(String url, JSONObject result, String phone0, String phone1) throws Exception {
         String encryptedToken = Vault.encrypt(result.getString("token"));
         if (!prefs.edit().putString("url", url).putString("token", encryptedToken).putString("name", result.getString("name"))
-            .putString("phone0", phone0).putString("phone1", phone1).putBoolean("enabled", true).putString("error", "").commit())
+            .putString("phone0", phone0).putString("phone1", phone1).putBoolean("enabled", false)
+            .putBoolean("collectionConsent", true).putString("error", "").commit())
             throw new Exception("无法保存配对信息");
         rememberSubscriptions();
     }
